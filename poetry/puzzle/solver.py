@@ -100,17 +100,36 @@ class Solver:
                                 and locked.source_type == pkg.source_type
                                 and locked_source_url == pkg_source_url
                                 and locked.source_reference == pkg.source_reference
+                                and locked.source_resolved_reference
+                                == pkg.source_resolved_reference
                             ):
-                                pkg = Package(pkg.name, locked.version)
-                                pkg.source_type = "git"
-                                pkg.source_url = locked.source_url
-                                pkg.source_reference = locked.source_reference
+                                pkg = Package(
+                                    pkg.name,
+                                    locked.version,
+                                    source_type="git",
+                                    source_url=locked.source_url,
+                                    source_reference=locked.source_reference,
+                                    source_resolved_reference=locked.source_resolved_reference,
+                                )
                                 break
 
                         if pkg_source_url != package_source_url or (
-                            pkg.source_reference != package.source_reference
+                            (
+                                not pkg.source_resolved_reference
+                                or not package.source_resolved_reference
+                            )
+                            and pkg.source_reference != package.source_reference
                             and not pkg.source_reference.startswith(
                                 package.source_reference
+                            )
+                            or (
+                                pkg.source_resolved_reference
+                                and package.source_resolved_reference
+                                and pkg.source_resolved_reference
+                                != package.source_resolved_reference
+                                and not pkg.source_resolved_reference.startswith(
+                                    package.source_resolved_reference
+                                )
                             )
                         ):
                             operations.append(Update(pkg, package, priority=depths[i]))
@@ -220,6 +239,24 @@ class Solver:
             return self.solve_in_compatibility_mode(e.overrides, use_latest=use_latest)
         except SolveFailure as e:
             raise SolverProblemError(e)
+
+        # Merging feature packages with base packages
+        for package in packages:
+            if package.features:
+                for _package in packages:
+                    if (
+                        _package.name == package.name
+                        and not _package.is_same_package_as(package)
+                        and _package.version == package.version
+                    ):
+                        for dep in package.requires:
+                            if dep.is_same_package_as(_package):
+                                continue
+
+                            if dep not in _package.requires:
+                                _package.requires.append(dep)
+
+        packages = [package for package in packages if not package.features]
 
         graph = self._build_graph(self._package, packages)
 

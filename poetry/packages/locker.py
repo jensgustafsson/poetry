@@ -75,9 +75,12 @@ class Locker(object):
         """
         Searches and returns a repository of locked packages.
         """
+        from poetry.factory import Factory
+
         if not self.is_locked():
             return poetry.repositories.Repository()
 
+        f = Factory()
         lock_data = self.lock_data
         packages = poetry.repositories.Repository()
 
@@ -92,7 +95,17 @@ class Locker(object):
             return packages
 
         for info in locked_packages:
-            package = Package(info["name"], info["version"], info["version"])
+            source = info.get("source", {})
+
+            package = Package(
+                info["name"],
+                info["version"],
+                info["version"],
+                source_type=source.get("type"),
+                source_url=source.get("url"),
+                source_reference=source.get("reference"),
+                source_resolved_reference=source.get("resolved_reference"),
+            )
             package.description = info.get("description", "")
             package.category = info["category"]
             package.optional = info["optional"]
@@ -137,19 +150,14 @@ class Locker(object):
             for dep_name, constraint in info.get("dependencies", {}).items():
                 if isinstance(constraint, list):
                     for c in constraint:
-                        package.add_dependency(dep_name, c)
+                        package.add_dependency(f.create_dependency(dep_name, c))
 
                     continue
 
-                package.add_dependency(dep_name, constraint)
+                package.add_dependency(f.create_dependency(dep_name, constraint))
 
             if "develop" in info:
                 package.develop = info["develop"]
-
-            if "source" in info:
-                package.source_type = info["source"].get("type", "")
-                package.source_url = info["source"]["url"]
-                package.source_reference = info["source"]["reference"]
 
             packages.add_package(package)
 
@@ -326,12 +334,13 @@ class Locker(object):
             data["dependencies"] = dependencies
 
         if package.source_url:
-            data["source"] = {
-                "url": package.source_url,
-                "reference": package.source_reference,
-            }
+            data["source"] = {"url": package.source_url}
             if package.source_type:
                 data["source"]["type"] = package.source_type
+            if package.source_reference:
+                data["source"]["reference"] = package.source_reference
+            if package.source_resolved_reference:
+                data["source"]["resolved_reference"] = package.source_resolved_reference
             if package.source_type == "directory":
                 data["develop"] = package.develop
 

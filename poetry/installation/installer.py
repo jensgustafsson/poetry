@@ -265,6 +265,7 @@ class Installer:
         for pkg in locked_repository.packages:
             whitelist.append(pkg.name)
 
+        print(sorted(repo.packages, key=lambda p: p.name))
         solver = Solver(
             root,
             pool,
